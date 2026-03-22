@@ -2,9 +2,9 @@ name: CI — ServiMarket
 
 on:
   pull_request:
-    branches: [main, develop]
+    branches: [main, desarrollo]
   push:
-    branches: [develop]
+    branches: [desarrollo]
 
 jobs:
   ci:
