@@ -1,7 +1,9 @@
 /**
  * Security-focused in-memory data store for authorization and payment validation.
  */
+import { randomBytes } from 'node:crypto';
 import type { AuthUser, OrderStatus } from './types';
+import { hashPassword } from '../shared/lib/passwords';
 
 export interface Order {
   id: string;
@@ -18,8 +20,13 @@ export interface Service {
   description: string;
 }
 
+export interface StoredUser extends AuthUser {
+  passwordHash: string;
+  passwordSalt: string;
+}
+
 export interface DataStore {
-  users: Map<string, AuthUser>;
+  users: Map<string, StoredUser>;
   orders: Map<string, Order>;
   services: Map<string, Service>;
 }
@@ -42,6 +49,16 @@ export const testUsers = {
   },
 } as const satisfies Record<string, AuthUser>;
 
+const seedPasswordSalt = randomBytes(16).toString('hex');
+const seedPassword = randomBytes(32).toString('hex');
+const seedPasswordHash = hashPassword(seedPassword, seedPasswordSalt);
+
+const createStoredUser = (user: AuthUser): StoredUser => ({
+  ...user,
+  passwordHash: seedPasswordHash,
+  passwordSalt: seedPasswordSalt,
+});
+
 export const testOrders = {
   providerBOrder: {
     id: 'order-provider-b',
@@ -62,10 +79,10 @@ export const testServices = {
 };
 
 export const createDataStore = (): DataStore => {
-  const users = new Map<string, AuthUser>([
-    [testUsers.providerA.id, testUsers.providerA],
-    [testUsers.providerB.id, testUsers.providerB],
-    [testUsers.client.id, testUsers.client],
+  const users = new Map<string, StoredUser>([
+    [testUsers.providerA.id, createStoredUser(testUsers.providerA)],
+    [testUsers.providerB.id, createStoredUser(testUsers.providerB)],
+    [testUsers.client.id, createStoredUser(testUsers.client)],
   ]);
 
   const orders = new Map<string, Order>([

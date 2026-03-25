@@ -4,10 +4,11 @@
 import fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import jwt from '@fastify/jwt';
 import multipart from '@fastify/multipart';
-import { createHmac } from 'node:crypto';
+import { createHmac, randomBytes } from 'node:crypto';
 import { createDataStore, type DataStore } from './dataStore';
 import type { AuthUser, OrderStatus, UserRole } from './types';
 import { registerSecurityPlugins } from '../shared/middleware/security';
+import { hashPassword, verifyPassword } from '../shared/lib/passwords';
 import { initSentry } from '../shared/lib/sentry';
 import { logAuthAttempt, securityLogger } from '../shared/lib/securityLogger';
 
@@ -19,7 +20,13 @@ interface JwtPayload {
 const isValidRole = (role: string | undefined): role is UserRole =>
   role === 'provider' || role === 'client';
 
-const getJwtSecret = (): string => process.env.JWT_SECRET ?? 'dev-jwt-secret-change-me';
+const getJwtSecret = (): string => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error('JWT_SECRET is required.');
+  }
+  return secret;
+};
 
 const buildAuthContext = (
   request: FastifyRequest,
@@ -51,7 +58,11 @@ const createAuthenticator =
         return;
       }
 
-      request.user = storedUser;
+      request.user = {
+        id: storedUser.id,
+        role: storedUser.role,
+        email: storedUser.email,
+      } satisfies AuthUser;
     } catch {
       reply.status(401).send({ error: 'Unauthorized.' });
       return;
@@ -164,8 +175,13 @@ export const buildServer = async (): Promise<FastifyInstance> => {
       const user = body?.email
         ? [...store.users.values()].find((stored) => stored.email === body.email)
         : undefined;
+      const hasValidPassword =
+        !!body?.password &&
+        !!user?.passwordHash &&
+        !!user?.passwordSalt &&
+        verifyPassword(body.password, user.passwordSalt, user.passwordHash);
 
-      if (!body?.email || !body.password || body.password !== 'password123' || !user) {
+      if (!body?.email || !body.password || !user || !hasValidPassword) {
         logAuthAttempt(buildAuthContext(request, user?.id, 'failure'));
         reply.status(401).send({ error: 'Invalid credentials.' });
         return;
@@ -188,17 +204,23 @@ export const buildServer = async (): Promise<FastifyInstance> => {
       },
     },
     async (request, reply) => {
-      const body = request.body as { email?: string; role?: UserRole } | undefined;
-      if (!body?.email || !body.role || !isValidRole(body.role)) {
+      const body = request.body as
+        | { email?: string; role?: UserRole; password?: string }
+        | undefined;
+      if (!body?.email || !body.role || !isValidRole(body.role) || !body.password) {
         logAuthAttempt(buildAuthContext(request, undefined, 'failure'));
         reply.status(400).send({ error: 'Invalid registration data.' });
         return;
       }
 
-      const newUser: AuthUser = {
+      const passwordSalt = randomBytes(16).toString('hex');
+      const passwordHash = hashPassword(body.password, passwordSalt);
+      const newUser = {
         id: `user-${store.users.size + 1}`,
         role: body.role,
         email: body.email,
+        passwordHash,
+        passwordSalt,
       };
 
       store.users.set(newUser.id, newUser);

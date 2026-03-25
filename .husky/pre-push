@@ -8,7 +8,8 @@ if command -v gitleaks >/dev/null 2>&1; then
 fi
 
 if command -v docker >/dev/null 2>&1; then
-  docker run --rm -v "$(pwd)":/repo zricethezav/gitleaks:v8.18.4 detect --no-git --source /repo --config /repo/.gitleaks.toml --redact
+  GITLEAKS_IMAGE="${GITLEAKS_IMAGE:-zricethezav/gitleaks:v8.18.4}"
+  docker run --rm -v "$(pwd)":/repo "$GITLEAKS_IMAGE" detect --no-git --source /repo --config /repo/.gitleaks.toml --redact
   exit $?
 fi
 
