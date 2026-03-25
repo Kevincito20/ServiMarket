@@ -1,0 +1,31 @@
+# /**
+#  * Security-focused Gitleaks configuration for ServiMarket secrets scanning.
+#  */
+
+title = "ServiMarket Gitleaks"
+
+[[rules]]
+id = "supabase-keys"
+description = "Detect Supabase credentials"
+regex = '''(?i)(SUPABASE_URL|SUPABASE_ANON_KEY|SUPABASE_SERVICE_ROLE_KEY)\s*[:=]\s*[\"']?[A-Za-z0-9\-._]{20,}[\"']?'''
+tags = ["supabase", "credentials"]
+
+[[rules]]
+id = "stripe-keys"
+description = "Detect Stripe live keys"
+regex = '''(sk_live_[0-9a-zA-Z]{20,}|pk_live_[0-9a-zA-Z]{20,}|whsec_[0-9a-zA-Z]{16,})'''
+tags = ["stripe", "credentials"]
+
+[[rules]]
+id = "jwt-secret"
+description = "Detect JWT secrets"
+regex = '''(?i)(JWT_SECRET)\s*[:=]\s*[\"']?[A-Za-z0-9\-._]{16,}[\"']?'''
+tags = ["jwt", "credentials"]
+
+[[rules]]
+id = "generic-high-entropy"
+description = "Detect high-entropy strings"
+regex = '''[A-Za-z0-9+/=]{32,}'''
+entropy = 4.5
+secretGroup = 0
+tags = ["generic", "entropy"]

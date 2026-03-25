@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+# /** Security pre-push hook for secret scanning. */
+. "$(dirname -- "$0")/_/husky.sh"
+
+npx gitleaks detect --config .gitleaks.toml --source . --redact
