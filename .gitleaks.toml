@@ -4,6 +4,17 @@
 
 title = "ServiMarket Gitleaks"
 
+[allowlist]
+description = "Ignore dependencies and generated files"
+paths = [
+  '''node_modules''',
+  '''dist''',
+  '''package-lock\.json''',
+  '''\.git''',
+  '''\.expo''',
+  '''\.env\.example''',
+]
+
 [[rules]]
 id = "supabase-keys"
 description = "Detect Supabase credentials"
