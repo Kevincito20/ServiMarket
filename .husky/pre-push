@@ -1,0 +1,17 @@
+#!/usr/bin/env sh
+# /** Security pre-push hook for secret scanning. */
+. "$(dirname -- "$0")/_/husky.sh"
+
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks detect --no-git --config .gitleaks.toml --source . --redact
+  exit $?
+fi
+
+if command -v docker >/dev/null 2>&1; then
+  GITLEAKS_IMAGE="${GITLEAKS_IMAGE:-zricethezav/gitleaks:v8.18.4}"
+  docker run --rm -v "$(pwd)":/repo "$GITLEAKS_IMAGE" detect --no-git --source /repo --config /repo/.gitleaks.toml --redact
+  exit $?
+fi
+
+echo "gitleaks is not installed and Docker is unavailable. Please install gitleaks or Docker to proceed."
+exit 1

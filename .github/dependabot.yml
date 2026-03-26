@@ -1,0 +1,34 @@
+# /**
+#  * Security-focused Dependabot configuration for dependency updates.
+#  */
+version: 2
+updates:
+  - package-ecosystem: 'npm'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+    assignees:
+      - 'Kevincito20'
+    groups:
+      non-security:
+        applies-to: version-updates
+        patterns:
+          - '*'
+    labels:
+      - 'dependencies'
+    ignore:
+      - dependency-name: '*'
+        update-types:
+          - 'version-update:semver-major'
+  - package-ecosystem: 'npm'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+    assignees:
+      - 'Kevincito20'
+    labels:
+      - 'dependencies'
+      - 'security'
+    security-updates-only: true

@@ -1,0 +1,42 @@
+# /**
+#  * Security-focused deployment workflow with environment protections.
+#  */
+name: Deploy
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - desarrollo
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build:server
+      - name: Mask secrets
+        run: |
+          echo "::add-mask::${{ secrets.SENTRY_DSN }}"
+          echo "::add-mask::${{ secrets.STRIPE_SECRET_KEY }}"
+          echo "::add-mask::${{ secrets.STRIPE_WEBHOOK_SECRET }}"
+          echo "::add-mask::${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}"
+      - name: Build Docker image
+        run: docker build -t servimarket-app .
+      - name: Verify no env files in image
+        run: >
+          docker run --rm servimarket-app sh -c
+          "test ! -f .env &&
+          test ! -f .env.local &&
+          test ! -f .env.production &&
+          test ! -f .env.staging &&
+          test -z \"$(find . -maxdepth 1 -type f -name '.env.*' ! -name '.env.example')\""

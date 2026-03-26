@@ -1,0 +1,21 @@
+# /**
+#  * Security-focused dependency review workflow.
+#  */
+name: Dependency Review
+
+on:
+  pull_request:
+    branches:
+      - desarrollo
+
+jobs:
+  dependency-review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          deny-licenses: GPL-3.0, AGPL-3.0
