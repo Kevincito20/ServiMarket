@@ -9,6 +9,9 @@ on:
     branches:
       - desarrollo
 
+permissions:
+  contents: read
+
 jobs:
   type-check:
     runs-on: ubuntu-latest
@@ -59,6 +62,10 @@ jobs:
 
   semgrep-sast:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
       - uses: semgrep/semgrep-action@v1

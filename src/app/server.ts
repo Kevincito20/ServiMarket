@@ -159,202 +159,204 @@ export const buildServer = async (): Promise<FastifyInstance> => {
   });
 
   await registerSecurityPlugins(app);
+  const defaultRateLimit = app.rateLimit({ max: 100, timeWindow: '1 minute' });
+  const authRateLimit = app.rateLimit({ max: 10, timeWindow: '1 minute' });
 
-  app.post(
-    '/auth/login',
-    {
-      config: {
-        rateLimit: {
-          max: 10,
-          timeWindow: '1 minute',
-        },
-      },
-    },
-    async (request, reply) => {
-      const body = request.body as { email?: string; password?: string } | undefined;
-      const user = body?.email
-        ? [...store.users.values()].find((stored) => stored.email === body.email)
-        : undefined;
-      const hasValidPassword =
-        !!body?.password &&
-        !!user?.passwordHash &&
-        !!user?.passwordSalt &&
-        verifyPassword(body.password, user.passwordSalt, user.passwordHash);
+  app.post('/auth/login', { onRequest: authRateLimit }, async (request, reply) => {
+    const body = request.body as { email?: string; password?: string } | undefined;
+    const user = body?.email
+      ? [...store.users.values()].find((stored) => stored.email === body.email)
+      : undefined;
+    const hasValidPassword =
+      !!body?.password &&
+      !!user?.passwordHash &&
+      !!user?.passwordSalt &&
+      verifyPassword(body.password, user.passwordSalt, user.passwordHash);
 
-      if (!body?.email || !body.password || !user || !hasValidPassword) {
-        logAuthAttempt(buildAuthContext(request, user?.id, 'failure'));
-        reply.status(401).send({ error: 'Invalid credentials.' });
-        return;
-      }
+    if (!body?.email || !body.password || !user || !hasValidPassword) {
+      logAuthAttempt(buildAuthContext(request, user?.id, 'failure'));
+      reply.status(401).send({ error: 'Invalid credentials.' });
+      return;
+    }
 
-      const token = app.jwt.sign({ sub: user.id, role: user.role }, { expiresIn: '1h' });
-      logAuthAttempt(buildAuthContext(request, user.id, 'success'));
-      reply.send({ token });
-    },
-  );
+    const token = app.jwt.sign({ sub: user.id, role: user.role }, { expiresIn: '1h' });
+    logAuthAttempt(buildAuthContext(request, user.id, 'success'));
+    reply.send({ token });
+  });
 
-  app.post(
-    '/auth/register',
-    {
-      config: {
-        rateLimit: {
-          max: 10,
-          timeWindow: '1 minute',
-        },
-      },
-    },
-    async (request, reply) => {
-      const body = request.body as
-        | { email?: string; role?: UserRole; password?: string }
-        | undefined;
-      if (!body?.email || !body.role || !isValidRole(body.role) || !body.password) {
-        logAuthAttempt(buildAuthContext(request, undefined, 'failure'));
-        reply.status(400).send({ error: 'Invalid registration data.' });
-        return;
-      }
+  app.post('/auth/register', { onRequest: authRateLimit }, async (request, reply) => {
+    const body = request.body as { email?: string; role?: UserRole; password?: string } | undefined;
+    if (!body?.email || !body.role || !isValidRole(body.role) || !body.password) {
+      logAuthAttempt(buildAuthContext(request, undefined, 'failure'));
+      reply.status(400).send({ error: 'Invalid registration data.' });
+      return;
+    }
 
-      const passwordSalt = randomBytes(16).toString('hex');
-      const passwordHash = hashPassword(body.password, passwordSalt);
-      const newUser = {
-        id: `user-${store.users.size + 1}`,
-        role: body.role,
-        email: body.email,
-        passwordHash,
-        passwordSalt,
-      };
+    const passwordSalt = randomBytes(16).toString('hex');
+    const passwordHash = hashPassword(body.password, passwordSalt);
+    const newUser = {
+      id: `user-${store.users.size + 1}`,
+      role: body.role,
+      email: body.email,
+      passwordHash,
+      passwordSalt,
+    };
 
-      store.users.set(newUser.id, newUser);
-      const token = app.jwt.sign({ sub: newUser.id, role: newUser.role }, { expiresIn: '1h' });
-      logAuthAttempt(buildAuthContext(request, newUser.id, 'success'));
-      reply.status(201).send({ token });
-    },
-  );
+    store.users.set(newUser.id, newUser);
+    const token = app.jwt.sign({ sub: newUser.id, role: newUser.role }, { expiresIn: '1h' });
+    logAuthAttempt(buildAuthContext(request, newUser.id, 'success'));
+    reply.status(201).send({ token });
+  });
 
   app.get('/services', async (_request, reply) => {
     reply.send({ services: [...store.services.values()] });
   });
 
-  app.post('/services', { preHandler: authenticate }, async (request, reply) => {
-    if (!verifyProvider(request, reply)) {
-      return;
-    }
+  app.post(
+    '/services',
+    { onRequest: defaultRateLimit, preHandler: authenticate },
+    async (request, reply) => {
+      if (!verifyProvider(request, reply)) {
+        return;
+      }
 
-    const body = request.body as { title?: string; description?: string } | undefined;
-    const title = body?.title ?? '';
-    const description = body?.description ?? '';
+      const body = request.body as { title?: string; description?: string } | undefined;
+      const title = body?.title ?? '';
+      const description = body?.description ?? '';
 
-    if (!title || !description) {
-      reply.status(422).send({ error: 'Invalid payload.' });
-      return;
-    }
+      if (!title || !description) {
+        reply.status(422).send({ error: 'Invalid payload.' });
+        return;
+      }
 
-    if (description.length > 10000) {
-      reply.status(422).send({ error: 'Description too long.' });
-      return;
-    }
+      if (description.length > 10000) {
+        reply.status(422).send({ error: 'Description too long.' });
+        return;
+      }
 
-    if (/[<>]/.test(title) || /<script/i.test(title)) {
-      reply.status(422).send({ error: 'Invalid title content.' });
-      return;
-    }
+      if (/[<>]/.test(title) || /<script/i.test(title)) {
+        reply.status(422).send({ error: 'Invalid title content.' });
+        return;
+      }
 
-    const serviceId = `service-${store.services.size + 1}`;
-    const service = {
-      id: serviceId,
-      providerId: request.user?.id ?? 'unknown',
-      title,
-      description,
-    };
+      const serviceId = `service-${store.services.size + 1}`;
+      const service = {
+        id: serviceId,
+        providerId: request.user?.id ?? 'unknown',
+        title,
+        description,
+      };
 
-    store.services.set(serviceId, service);
-    reply.status(201).send(service);
-  });
+      store.services.set(serviceId, service);
+      reply.status(201).send(service);
+    },
+  );
 
-  app.post('/services/upload', { preHandler: authenticate }, async (request, reply) => {
-    if (!verifyProvider(request, reply)) {
-      return;
-    }
+  app.post(
+    '/services/upload',
+    { onRequest: defaultRateLimit, preHandler: authenticate },
+    async (request, reply) => {
+      if (!verifyProvider(request, reply)) {
+        return;
+      }
 
-    const file = await request.file();
-    if (!file) {
-      reply.status(400).send({ error: 'File required.' });
-      return;
-    }
+      const file = await request.file();
+      if (!file) {
+        reply.status(400).send({ error: 'File required.' });
+        return;
+      }
 
-    const filename = file.filename.toLowerCase();
-    if (filename.endsWith('.exe')) {
-      reply.status(415).send({ error: 'Unsupported file type.' });
-      return;
-    }
+      const filename = file.filename.toLowerCase();
+      if (filename.endsWith('.exe')) {
+        reply.status(415).send({ error: 'Unsupported file type.' });
+        return;
+      }
 
-    await file.toBuffer();
-    reply.status(201).send({ uploaded: true });
-  });
+      await file.toBuffer();
+      reply.status(201).send({ uploaded: true });
+    },
+  );
 
-  app.get('/orders', { preHandler: authenticate }, async (request, reply) => {
-    const userId = request.user?.id;
-    const orders = [...store.orders.values()].filter(
-      (order) => order.providerId === userId || order.clientId === userId,
-    );
-    reply.send({ orders });
-  });
+  app.get(
+    '/orders',
+    { onRequest: defaultRateLimit, preHandler: authenticate },
+    async (request, reply) => {
+      const userId = request.user?.id;
+      const orders = [...store.orders.values()].filter(
+        (order) => order.providerId === userId || order.clientId === userId,
+      );
+      reply.send({ orders });
+    },
+  );
 
-  app.get('/orders/:id', { preHandler: authenticate }, async (request, reply) => {
-    const { id } = request.params as { id: string };
-    const order = store.orders.get(id);
+  app.get(
+    '/orders/:id',
+    { onRequest: defaultRateLimit, preHandler: authenticate },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const order = store.orders.get(id);
 
-    if (!order) {
-      reply.status(404).send({ error: 'Order not found.' });
-      return;
-    }
+      if (!order) {
+        reply.status(404).send({ error: 'Order not found.' });
+        return;
+      }
 
-    if (order.providerId !== request.user?.id && order.clientId !== request.user?.id) {
-      reply.status(403).send({ error: 'Forbidden.' });
-      return;
-    }
+      if (order.providerId !== request.user?.id && order.clientId !== request.user?.id) {
+        reply.status(403).send({ error: 'Forbidden.' });
+        return;
+      }
 
-    reply.send({ order });
-  });
+      reply.send({ order });
+    },
+  );
 
-  app.patch('/orders/:id/status', { preHandler: authenticate }, async (request, reply) => {
-    const { id } = request.params as { id: string };
-    const body = request.body as { status?: OrderStatus } | undefined;
-    const order = store.orders.get(id);
+  app.patch(
+    '/orders/:id/status',
+    { onRequest: defaultRateLimit, preHandler: authenticate },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const body = request.body as { status?: OrderStatus } | undefined;
+      const order = store.orders.get(id);
 
-    if (!order) {
-      reply.status(404).send({ error: 'Order not found.' });
-      return;
-    }
+      if (!order) {
+        reply.status(404).send({ error: 'Order not found.' });
+        return;
+      }
 
-    if (body?.status === 'completed' && request.user?.role !== 'provider') {
-      reply.status(403).send({ error: 'Only providers can complete orders.' });
-      return;
-    }
+      if (body?.status === 'completed' && request.user?.role !== 'provider') {
+        reply.status(403).send({ error: 'Only providers can complete orders.' });
+        return;
+      }
 
-    if (request.user?.role === 'provider' && order.providerId !== request.user?.id) {
-      reply.status(403).send({ error: 'Forbidden.' });
-      return;
-    }
+      if (request.user?.role === 'provider' && order.providerId !== request.user?.id) {
+        reply.status(403).send({ error: 'Forbidden.' });
+        return;
+      }
 
-    if (body?.status) {
-      order.status = body.status;
-      store.orders.set(id, order);
-    }
+      if (body?.status) {
+        order.status = body.status;
+        store.orders.set(id, order);
+      }
 
-    reply.send({ order });
-  });
+      reply.send({ order });
+    },
+  );
 
-  app.patch('/users/:id', { preHandler: authenticate }, async (request, reply) => {
-    const { id } = request.params as { id: string };
+  app.patch(
+    '/users/:id',
+    { onRequest: defaultRateLimit, preHandler: authenticate },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
 
-    if (request.user?.id !== id) {
-      reply.status(403).send({ error: 'Forbidden.' });
-      return;
-    }
+      if (request.user?.id !== id) {
+        reply.status(403).send({ error: 'Forbidden.' });
+        return;
+      }
 
-    const body = request.body as { displayName?: string } | undefined;
-    reply.send({ id, displayName: body?.displayName ?? null });
-  });
+      const body = request.body as { displayName?: string } | undefined;
+      reply.send({ id, displayName: body?.displayName ?? null });
+    },
+  );
 
   app.post('/payments/webhook', async (request, reply) => {
     const signature = request.headers['stripe-signature'];
@@ -376,22 +378,26 @@ export const buildServer = async (): Promise<FastifyInstance> => {
     reply.send({ received: true });
   });
 
-  app.post('/payments/create', { preHandler: authenticate }, async (request, reply) => {
-    const body = request.body as { orderId?: string; amount?: number } | undefined;
+  app.post(
+    '/payments/create',
+    { onRequest: defaultRateLimit, preHandler: authenticate },
+    async (request, reply) => {
+      const body = request.body as { orderId?: string; amount?: number } | undefined;
 
-    if (!body?.orderId) {
-      reply.status(400).send({ error: 'Order ID required.' });
-      return;
-    }
+      if (!body?.orderId) {
+        reply.status(400).send({ error: 'Order ID required.' });
+        return;
+      }
 
-    const order = store.orders.get(body.orderId);
-    if (!order) {
-      reply.status(404).send({ error: 'Order not found.' });
-      return;
-    }
+      const order = store.orders.get(body.orderId);
+      if (!order) {
+        reply.status(404).send({ error: 'Order not found.' });
+        return;
+      }
 
-    reply.send({ orderId: order.id, amount: order.amount });
-  });
+      reply.send({ orderId: order.id, amount: order.amount });
+    },
+  );
 
   await app.ready();
   return app;
