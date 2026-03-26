@@ -159,9 +159,14 @@ export const buildServer = async (): Promise<FastifyInstance> => {
   });
 
   await registerSecurityPlugins(app);
+  const authRateLimitConfig = { max: 10, timeWindow: '1 minute' };
+  const defaultRateLimitConfig = { max: 100, timeWindow: '1 minute' };
   app.post(
     '/auth/login',
-    { onRequest: app.rateLimit({ max: 10, timeWindow: '1 minute' }) },
+    {
+      onRequest: app.rateLimit(authRateLimitConfig),
+      config: { rateLimit: authRateLimitConfig },
+    },
     async (request, reply) => {
       const body = request.body as { email?: string; password?: string } | undefined;
       const user = body?.email
@@ -187,7 +192,10 @@ export const buildServer = async (): Promise<FastifyInstance> => {
 
   app.post(
     '/auth/register',
-    { onRequest: app.rateLimit({ max: 10, timeWindow: '1 minute' }) },
+    {
+      onRequest: app.rateLimit(authRateLimitConfig),
+      config: { rateLimit: authRateLimitConfig },
+    },
     async (request, reply) => {
       const body = request.body as
         | { email?: string; role?: UserRole; password?: string }
@@ -221,7 +229,11 @@ export const buildServer = async (): Promise<FastifyInstance> => {
 
   app.post(
     '/services',
-    { onRequest: app.rateLimit({ max: 100, timeWindow: '1 minute' }), preHandler: authenticate },
+    {
+      onRequest: app.rateLimit(defaultRateLimitConfig),
+      preHandler: authenticate,
+      config: { rateLimit: defaultRateLimitConfig },
+    },
     async (request, reply) => {
       if (!verifyProvider(request, reply)) {
         return;
@@ -261,7 +273,11 @@ export const buildServer = async (): Promise<FastifyInstance> => {
 
   app.post(
     '/services/upload',
-    { onRequest: app.rateLimit({ max: 100, timeWindow: '1 minute' }), preHandler: authenticate },
+    {
+      onRequest: app.rateLimit(defaultRateLimitConfig),
+      preHandler: authenticate,
+      config: { rateLimit: defaultRateLimitConfig },
+    },
     async (request, reply) => {
       if (!verifyProvider(request, reply)) {
         return;
@@ -286,7 +302,11 @@ export const buildServer = async (): Promise<FastifyInstance> => {
 
   app.get(
     '/orders',
-    { onRequest: app.rateLimit({ max: 100, timeWindow: '1 minute' }), preHandler: authenticate },
+    {
+      onRequest: app.rateLimit(defaultRateLimitConfig),
+      preHandler: authenticate,
+      config: { rateLimit: defaultRateLimitConfig },
+    },
     async (request, reply) => {
       const userId = request.user?.id;
       const orders = [...store.orders.values()].filter(
@@ -298,7 +318,11 @@ export const buildServer = async (): Promise<FastifyInstance> => {
 
   app.get(
     '/orders/:id',
-    { onRequest: app.rateLimit({ max: 100, timeWindow: '1 minute' }), preHandler: authenticate },
+    {
+      onRequest: app.rateLimit(defaultRateLimitConfig),
+      preHandler: authenticate,
+      config: { rateLimit: defaultRateLimitConfig },
+    },
     async (request, reply) => {
       const { id } = request.params as { id: string };
       const order = store.orders.get(id);
@@ -319,7 +343,11 @@ export const buildServer = async (): Promise<FastifyInstance> => {
 
   app.patch(
     '/orders/:id/status',
-    { onRequest: app.rateLimit({ max: 100, timeWindow: '1 minute' }), preHandler: authenticate },
+    {
+      onRequest: app.rateLimit(defaultRateLimitConfig),
+      preHandler: authenticate,
+      config: { rateLimit: defaultRateLimitConfig },
+    },
     async (request, reply) => {
       const { id } = request.params as { id: string };
       const body = request.body as { status?: OrderStatus } | undefined;
@@ -351,7 +379,11 @@ export const buildServer = async (): Promise<FastifyInstance> => {
 
   app.patch(
     '/users/:id',
-    { onRequest: app.rateLimit({ max: 100, timeWindow: '1 minute' }), preHandler: authenticate },
+    {
+      onRequest: app.rateLimit(defaultRateLimitConfig),
+      preHandler: authenticate,
+      config: { rateLimit: defaultRateLimitConfig },
+    },
     async (request, reply) => {
       const { id } = request.params as { id: string };
 
@@ -387,7 +419,11 @@ export const buildServer = async (): Promise<FastifyInstance> => {
 
   app.post(
     '/payments/create',
-    { onRequest: app.rateLimit({ max: 100, timeWindow: '1 minute' }), preHandler: authenticate },
+    {
+      onRequest: app.rateLimit(defaultRateLimitConfig),
+      preHandler: authenticate,
+      config: { rateLimit: defaultRateLimitConfig },
+    },
     async (request, reply) => {
       const body = request.body as { orderId?: string; amount?: number } | undefined;
 
