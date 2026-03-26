@@ -159,54 +159,61 @@ export const buildServer = async (): Promise<FastifyInstance> => {
   });
 
   await registerSecurityPlugins(app);
-  const defaultRateLimit = app.rateLimit({ max: 100, timeWindow: '1 minute' });
-  const authRateLimit = app.rateLimit({ max: 10, timeWindow: '1 minute' });
+  app.post(
+    '/auth/login',
+    { onRequest: app.rateLimit({ max: 10, timeWindow: '1 minute' }) },
+    async (request, reply) => {
+      const body = request.body as { email?: string; password?: string } | undefined;
+      const user = body?.email
+        ? [...store.users.values()].find((stored) => stored.email === body.email)
+        : undefined;
+      const hasValidPassword =
+        !!body?.password &&
+        !!user?.passwordHash &&
+        !!user?.passwordSalt &&
+        verifyPassword(body.password, user.passwordSalt, user.passwordHash);
 
-  app.post('/auth/login', { onRequest: authRateLimit }, async (request, reply) => {
-    const body = request.body as { email?: string; password?: string } | undefined;
-    const user = body?.email
-      ? [...store.users.values()].find((stored) => stored.email === body.email)
-      : undefined;
-    const hasValidPassword =
-      !!body?.password &&
-      !!user?.passwordHash &&
-      !!user?.passwordSalt &&
-      verifyPassword(body.password, user.passwordSalt, user.passwordHash);
+      if (!body?.email || !body.password || !user || !hasValidPassword) {
+        logAuthAttempt(buildAuthContext(request, user?.id, 'failure'));
+        reply.status(401).send({ error: 'Invalid credentials.' });
+        return;
+      }
 
-    if (!body?.email || !body.password || !user || !hasValidPassword) {
-      logAuthAttempt(buildAuthContext(request, user?.id, 'failure'));
-      reply.status(401).send({ error: 'Invalid credentials.' });
-      return;
-    }
+      const token = app.jwt.sign({ sub: user.id, role: user.role }, { expiresIn: '1h' });
+      logAuthAttempt(buildAuthContext(request, user.id, 'success'));
+      reply.send({ token });
+    },
+  );
 
-    const token = app.jwt.sign({ sub: user.id, role: user.role }, { expiresIn: '1h' });
-    logAuthAttempt(buildAuthContext(request, user.id, 'success'));
-    reply.send({ token });
-  });
+  app.post(
+    '/auth/register',
+    { onRequest: app.rateLimit({ max: 10, timeWindow: '1 minute' }) },
+    async (request, reply) => {
+      const body = request.body as
+        | { email?: string; role?: UserRole; password?: string }
+        | undefined;
+      if (!body?.email || !body.role || !isValidRole(body.role) || !body.password) {
+        logAuthAttempt(buildAuthContext(request, undefined, 'failure'));
+        reply.status(400).send({ error: 'Invalid registration data.' });
+        return;
+      }
 
-  app.post('/auth/register', { onRequest: authRateLimit }, async (request, reply) => {
-    const body = request.body as { email?: string; role?: UserRole; password?: string } | undefined;
-    if (!body?.email || !body.role || !isValidRole(body.role) || !body.password) {
-      logAuthAttempt(buildAuthContext(request, undefined, 'failure'));
-      reply.status(400).send({ error: 'Invalid registration data.' });
-      return;
-    }
+      const passwordSalt = randomBytes(16).toString('hex');
+      const passwordHash = hashPassword(body.password, passwordSalt);
+      const newUser = {
+        id: `user-${store.users.size + 1}`,
+        role: body.role,
+        email: body.email,
+        passwordHash,
+        passwordSalt,
+      };
 
-    const passwordSalt = randomBytes(16).toString('hex');
-    const passwordHash = hashPassword(body.password, passwordSalt);
-    const newUser = {
-      id: `user-${store.users.size + 1}`,
-      role: body.role,
-      email: body.email,
-      passwordHash,
-      passwordSalt,
-    };
-
-    store.users.set(newUser.id, newUser);
-    const token = app.jwt.sign({ sub: newUser.id, role: newUser.role }, { expiresIn: '1h' });
-    logAuthAttempt(buildAuthContext(request, newUser.id, 'success'));
-    reply.status(201).send({ token });
-  });
+      store.users.set(newUser.id, newUser);
+      const token = app.jwt.sign({ sub: newUser.id, role: newUser.role }, { expiresIn: '1h' });
+      logAuthAttempt(buildAuthContext(request, newUser.id, 'success'));
+      reply.status(201).send({ token });
+    },
+  );
 
   app.get('/services', async (_request, reply) => {
     reply.send({ services: [...store.services.values()] });
@@ -214,7 +221,7 @@ export const buildServer = async (): Promise<FastifyInstance> => {
 
   app.post(
     '/services',
-    { onRequest: defaultRateLimit, preHandler: authenticate },
+    { onRequest: app.rateLimit({ max: 100, timeWindow: '1 minute' }), preHandler: authenticate },
     async (request, reply) => {
       if (!verifyProvider(request, reply)) {
         return;
@@ -254,7 +261,7 @@ export const buildServer = async (): Promise<FastifyInstance> => {
 
   app.post(
     '/services/upload',
-    { onRequest: defaultRateLimit, preHandler: authenticate },
+    { onRequest: app.rateLimit({ max: 100, timeWindow: '1 minute' }), preHandler: authenticate },
     async (request, reply) => {
       if (!verifyProvider(request, reply)) {
         return;
@@ -279,7 +286,7 @@ export const buildServer = async (): Promise<FastifyInstance> => {
 
   app.get(
     '/orders',
-    { onRequest: defaultRateLimit, preHandler: authenticate },
+    { onRequest: app.rateLimit({ max: 100, timeWindow: '1 minute' }), preHandler: authenticate },
     async (request, reply) => {
       const userId = request.user?.id;
       const orders = [...store.orders.values()].filter(
@@ -291,7 +298,7 @@ export const buildServer = async (): Promise<FastifyInstance> => {
 
   app.get(
     '/orders/:id',
-    { onRequest: defaultRateLimit, preHandler: authenticate },
+    { onRequest: app.rateLimit({ max: 100, timeWindow: '1 minute' }), preHandler: authenticate },
     async (request, reply) => {
       const { id } = request.params as { id: string };
       const order = store.orders.get(id);
@@ -312,7 +319,7 @@ export const buildServer = async (): Promise<FastifyInstance> => {
 
   app.patch(
     '/orders/:id/status',
-    { onRequest: defaultRateLimit, preHandler: authenticate },
+    { onRequest: app.rateLimit({ max: 100, timeWindow: '1 minute' }), preHandler: authenticate },
     async (request, reply) => {
       const { id } = request.params as { id: string };
       const body = request.body as { status?: OrderStatus } | undefined;
@@ -344,7 +351,7 @@ export const buildServer = async (): Promise<FastifyInstance> => {
 
   app.patch(
     '/users/:id',
-    { onRequest: defaultRateLimit, preHandler: authenticate },
+    { onRequest: app.rateLimit({ max: 100, timeWindow: '1 minute' }), preHandler: authenticate },
     async (request, reply) => {
       const { id } = request.params as { id: string };
 
@@ -380,7 +387,7 @@ export const buildServer = async (): Promise<FastifyInstance> => {
 
   app.post(
     '/payments/create',
-    { onRequest: defaultRateLimit, preHandler: authenticate },
+    { onRequest: app.rateLimit({ max: 100, timeWindow: '1 minute' }), preHandler: authenticate },
     async (request, reply) => {
       const body = request.body as { orderId?: string; amount?: number } | undefined;
 
